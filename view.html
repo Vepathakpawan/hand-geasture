@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Interactive Nebula: 2026 Edition</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: cyan; pointer-events: none; z-index: 10; }
+        #video_container { position: absolute; bottom: 20px; right: 20px; width: 180px; height: 135px; border: 1px solid #333; border-radius: 8px; overflow: hidden; transform: scaleX(-1); opacity: 0.7; }
+        .hint { font-size: 0.8em; color: #888; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h2>Interactive Nebula</h2>
+        <p id="gesture-text">Detecting Hand...</p>
+        <p class="hint">1: Heart | 2: Saturn | 3: Flower | 4: Chaos | Open: Move & Scale</p>
+    </div>
+    <video id="input_video" style="display:none"></video>
+    <div id="video_container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
+    <script>
+        // --- SETUP ---
+        const PARTICLE_COUNT = 10000;
+        let scene, camera, renderer, composer, points;
+        let targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+        let colors = new Float32Array(PARTICLE_COUNT * 3);
+        
+        init();
+        animate();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            camera.position.z = 20;
+
+            renderer = new THREE.WebGLRenderer({ antialias: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            // Bloom Effect (Post-Processing)
+            const renderScene = new THREE.RenderPass(scene, camera);
+            const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            // Particles
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(PARTICLE_COUNT * 3);
+            for(let i=0; i<PARTICLE_COUNT*3; i++) pos[i] = (Math.random()-0.5)*40;
+            
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const mat = new THREE.PointsMaterial({ size: 0.07, vertexColors: true, blending: THREE.AdditiveBlending });
+            points = new THREE.Points(geo, mat);
+            scene.add(points);
+            
+            setHeart(); // Default
+        }
+
+        // --- GESTURE LOGIC ---
+        function onResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const hand = results.multiHandLandmarks[0];
+                document.getElementById('gesture-text').innerText = "System Active";
+
+                // Smooth following
+                const targetX = (hand[8].x - 0.5) * -40;
+                const targetY = (hand[8].y - 0.5) * -30;
+                points.position.x += (targetX - points.position.x) * 0.1;
+                points.position.y += (targetY - points.position.y) * 0.1;
+
+                // Simple Gesture Map
+                let fingers = 0;
+                if (hand[8].y < hand[6].y) fingers++; 
+                if (hand[12].y < hand[10].y) fingers++;
+                if (hand[16].y < hand[14].y) fingers++;
+                if (hand[20].y < hand[18].y) fingers++;
+
+                if (fingers === 1) setHeart();
+                else if (fingers === 2) setSaturn();
+                else if (fingers === 3) setFlower();
+                else if (fingers >= 4) setChaos();
+            }
+        }
+
+        // --- SHAPES ---
+        function setHeart() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const t = (i / PARTICLE_COUNT) * Math.PI * 2;
+                targetPositions[i*3] = 16 * Math.pow(Math.sin(t), 3) * 0.5;
+                targetPositions[i*3+1] = (13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)) * 0.5;
+                targetPositions[i*3+2] = (Math.random() - 0.5) * 2;
+                setColor(i, 1, 0.1, 0.3);
+            }
+        }
+
+        function setSaturn() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                if (i < PARTICLE_COUNT * 0.4) {
+                    const u = Math.random(), v = Math.random();
+                    const theta = 2 * Math.PI * u, phi = Math.acos(2*v-1);
+                    targetPositions[i*3] = 5 * Math.sin(phi) * Math.cos(theta);
+                    targetPositions[i*3+1] = 5 * Math.sin(phi) * Math.sin(theta);
+                    targetPositions[i*3+2] = 5 * Math.cos(phi);
+                    setColor(i, 1, 0.8, 0.4);
+                } else {
+                    const a = Math.random() * Math.PI * 2;
+                    const r = 7 + Math.random() * 4;
+                    targetPositions[i*3] = Math.cos(a) * r;
+                    targetPositions[i*3+1] = (Math.random()-0.5);
+                    targetPositions[i*3+2] = Math.sin(a) * r;
+                    setColor(i, 0.4, 0.6, 1);
+                }
+            }
+        }
+
+        function setFlower() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const t = (i / PARTICLE_COUNT) * Math.PI * 10;
+                const r = 10 * Math.cos(5 * t);
+                targetPositions[i*3] = r * Math.cos(t);
+                targetPositions[i*3+1] = r * Math.sin(t);
+                targetPositions[i*3+2] = (Math.random() - 0.5) * 5;
+                setColor(i, 0.7, 0.2, 1);
+            }
+        }
+
+        function setChaos() {
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                targetPositions[i*3] = (Math.random()-0.5) * 40;
+                targetPositions[i*3+1] = (Math.random()-0.5) * 40;
+                targetPositions[i*3+2] = (Math.random()-0.5) * 40;
+                setColor(i, Math.random(), Math.random(), 1);
+            }
+        }
+
+        function setColor(i, r, g, b) {
+            colors[i*3] = r; colors[i*3+1] = g; colors[i*3+2] = b;
+        }
+
+        // --- ANIMATION ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const pos = points.geometry.attributes.position.array;
+            const col = points.geometry.attributes.color.array;
+            
+            for (let i = 0; i < PARTICLE_COUNT * 3; i++) {
+                // Smooth Lerp to target + a little noise for life
+                const noise = (Math.random() - 0.5) * 0.02;
+                pos[i] += (targetPositions[i] - pos[i]) * 0.08 + noise;
+            }
+            
+            points.geometry.attributes.position.needsUpdate = true;
+            points.rotation.y += 0.002;
+            composer.render();
+        }
+
+        // MediaPipe Setup
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+        const videoElement = document.getElementById('input_video');
+        const cameraFeed = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+        cameraFeed.start();
+    </script>
+</body>
+</html>
